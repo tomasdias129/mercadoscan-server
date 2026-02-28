@@ -6,14 +6,11 @@ import pytesseract
 from PIL import Image
 import io
 import os
+import shutil
 
 app = Flask(__name__)
 
-# Deteta automaticamente o ambiente
-if os.name == 'nt':  # Windows
-    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-else:  # Linux (Railway)
-    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
@@ -36,13 +33,54 @@ def get_product_off(barcode: str):
         print(f"Erro OFF: {e}")
     return None
 
+def get_product_name_via_ocr(barcode: str):
+    try:
+        url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+
+        if data.get("status") != 1:
+            return None
+
+        product = data["product"]
+
+        image_url = (
+            product.get("image_front_url") or
+            product.get("image_url") or
+            product.get("image_front_small_url")
+        )
+
+        if not image_url:
+            print("❌ Nenhuma imagem encontrada no OpenFoodFacts")
+            return None
+
+        print(f"🖼️ Imagem encontrada: {image_url}")
+
+        img_res = requests.get(image_url, timeout=8)
+        img = Image.open(io.BytesIO(img_res.content))
+
+        text = pytesseract.image_to_string(img, lang="por+eng")
+        print(f"📝 Texto OCR extraído:\n{text}")
+
+        lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
+        print(f"📝 Linhas encontradas: {lines}")
+
+        if not lines:
+            return None
+
+        name = " ".join(lines[:3])
+        print(f"✅ Nome via OCR: {name}")
+        return name
+
+    except Exception as e:
+        print(f"Erro OCR: {e}")
+    return None
 
 def get_price_pingo_doce(product_name: str):
     try:
-        import json
         query = product_name.replace(" ", "+")
         url = f"https://www.pingodoce.pt/on/demandware.store/Sites-pingo-doce-Site/default/Search-Show?q={query}"
-        
+
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.text, "html.parser")
 
@@ -54,6 +92,7 @@ def get_price_pingo_doce(product_name: str):
             if not gtm_info:
                 continue
 
+            import json
             data = json.loads(gtm_info)
             items = data.get("items", [])
             if not items:
@@ -64,7 +103,6 @@ def get_price_pingo_doce(product_name: str):
 
             print(f"🔎 A comparar: '{item_name}' com '{search_name}'")
 
-            # Verifica match por palavras
             search_words = search_name.split()
             matched = sum(1 for word in search_words if word in item_name)
             score = matched / len(search_words)
@@ -82,10 +120,10 @@ def get_price_pingo_doce(product_name: str):
     except Exception as e:
         print(f"Erro Pingo Doce: {e}")
     return None
-    
+
 def get_price_continente(product_name: str):
     try:
-        query = requests.utils.quote(product_name)
+        query = product_name.replace(" ", "+")
         url = f"https://www.continente.pt/pesquisa/?q={query}"
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.text, "html.parser")
@@ -95,11 +133,9 @@ def get_price_continente(product_name: str):
             href = a["href"]
             if "/produto/" in href or "/products/" in href:
                 product_link = href
-                print(f"Link Continente encontrado: {href}")
                 break
 
         if not product_link:
-            print("Nenhum link Continente encontrado")
             return None
 
         if not product_link.startswith("http"):
@@ -110,17 +146,14 @@ def get_price_continente(product_name: str):
 
         for selector in [
             "span.price", "span.product-price", "div.price",
-            "p.price", "span[class*='price']", "div[class*='price']",
-            "span[class*='valor']", "div[class*='valor']"
+            "p.price", "span[class*='price']", "div[class*='price']"
         ]:
             tag = soup2.select_one(selector)
             if tag:
                 text = tag.get_text()
                 match = re.search(r"\d+[.,]\d{2}", text)
                 if match:
-                    price = float(match.group().replace(",", "."))
-                    print(f"Preço Continente encontrado: {price}€")
-                    return price
+                    return float(match.group().replace(",", "."))
 
     except Exception as e:
         print(f"Erro Continente: {e}")
@@ -128,7 +161,7 @@ def get_price_continente(product_name: str):
 
 def get_price_auchan(product_name: str):
     try:
-        query = requests.utils.quote(product_name)
+        query = product_name.replace(" ", "+")
         url = f"https://www.auchan.pt/pesquisa?q={query}"
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.text, "html.parser")
@@ -138,7 +171,6 @@ def get_price_auchan(product_name: str):
             href = a["href"]
             if "/produto/" in href or "/product/" in href:
                 product_link = href
-                print(f"Link Auchan encontrado: {href}")
                 break
 
         if not product_link:
@@ -167,7 +199,7 @@ def get_price_auchan(product_name: str):
 
 def get_price_intermarche(product_name: str):
     try:
-        query = requests.utils.quote(product_name)
+        query = product_name.replace(" ", "+")
         url = f"https://www.intermarche.pt/pesquisa?q={query}"
         res = requests.get(url, headers=HEADERS, timeout=8)
         soup = BeautifulSoup(res.text, "html.parser")
@@ -177,7 +209,6 @@ def get_price_intermarche(product_name: str):
             href = a["href"]
             if "/produto/" in href or "/product/" in href:
                 product_link = href
-                print(f"Link Intermarché encontrado: {href}")
                 break
 
         if not product_link:
@@ -218,6 +249,14 @@ def get_price_mercadona(product_name: str):
     except Exception as e:
         print(f"Erro Mercadona: {e}")
     return None
+
+@app.route("/test-tesseract")
+def test_tesseract():
+    try:
+        version = pytesseract.get_tesseract_version()
+        return jsonify({"tesseract": str(version), "path": pytesseract.pytesseract.tesseract_cmd})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 @app.route("/product/<barcode>/<supermarket>")
 def get_product(barcode: str, supermarket: str):
@@ -264,7 +303,6 @@ def get_product(barcode: str, supermarket: str):
             elif supermarket == "Mercadona":
                 price = get_price_mercadona(ocr_name)
 
-            # Atualiza o nome para o OCR se encontrou preço
             if price is not None:
                 print(f"✅ Preço encontrado com nome OCR: {price}€")
                 name = ocr_name
@@ -277,65 +315,7 @@ def get_product(barcode: str, supermarket: str):
         "price": price,
         "supermarket": supermarket
     })
-    
-pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' 
-def get_product_name_via_ocr(barcode: str):
-    try:
-        # 1. Busca imagem do produto no OpenFoodFacts
-        url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
-        res = requests.get(url, timeout=5)
-        data = res.json()
-
-        if data.get("status") != 1:
-            return None
-
-        product = data["product"]
-
-        # Tenta obter imagem frontal
-        image_url = (
-            product.get("image_front_url") or
-            product.get("image_url") or
-            product.get("image_front_small_url")
-        )
-
-        if not image_url:
-            print("❌ Nenhuma imagem encontrada no OpenFoodFacts")
-            return None
-
-        print(f"🖼️ Imagem encontrada: {image_url}")
-
-        # 2. Descarrega a imagem
-        img_res = requests.get(image_url, timeout=8)
-        img = Image.open(io.BytesIO(img_res.content))
-
-        # 3. OCR na imagem
-        text = pytesseract.image_to_string(img, lang="por+eng")
-        print(f"📝 Texto OCR extraído:\n{text}")
-        print(f"📝 Linhas encontradas: {[l.strip() for l in text.split(chr(10)) if len(l.strip()) > 3]}")
-
-        # 4. Limpa o texto — pega as primeiras linhas não vazias
-        lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
-        if not lines:
-            return None
-
-        # Usa as primeiras 3 linhas como nome do produto
-        name = " ".join(lines[:3])
-        print(f"✅ Nome via OCR: {name}")
-        return name
-
-    except Exception as e:
-        print(f"Erro OCR: {e}")
-    return None
-    
-@app.route("/test-tesseract")
-def test_tesseract():
-    try:
-        version = pytesseract.get_tesseract_version()
-        return jsonify({"tesseract": str(version), "path": pytesseract.pytesseract.tesseract_cmd})
-    except Exception as e:
-        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
-    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
