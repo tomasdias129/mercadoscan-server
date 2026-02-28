@@ -68,38 +68,55 @@ def get_product_name_via_ocr(barcode: str):
         img_res = requests.get(image_url, timeout=8)
         img = Image.open(io.BytesIO(img_res.content))
 
-        # Pré-processamento para melhorar OCR
-        # 1. Converte para RGB se necessário
+        from PIL import ImageEnhance, ImageFilter
+
         if img.mode != 'RGB':
             img = img.convert('RGB')
 
-        # 2. Aumenta o tamanho da imagem
         width, height = img.size
         img = img.resize((width * 3, height * 3), Image.LANCZOS)
-        print(f"📐 Tamanho da imagem: {img.size}")
-
-        # 3. Converte para escala de cinzas
         img = img.convert('L')
-
-        # 4. Aumenta contraste
-        from PIL import ImageEnhance, ImageFilter
         img = ImageEnhance.Contrast(img).enhance(2.0)
         img = ImageEnhance.Sharpness(img).enhance(2.0)
         img = img.filter(ImageFilter.SHARPEN)
 
-        # 5. OCR com configurações melhoradas
-        config = '--oem 3 --psm 6'
-        text = pytesseract.image_to_string(img, lang="por+eng", config=config)
-        print(f"📝 Texto OCR extraído:\n{text}")
+        # Deteta texto com tamanho e posição
+        data_ocr = pytesseract.image_to_data(img, lang="por+eng", 
+                    config='--oem 3 --psm 6',
+                    output_type=pytesseract.Output.DICT)
 
-        lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
-        print(f"📝 Linhas encontradas: {lines}")
+        # Palavras válidas em português/inglês — apenas letras latinas básicas
+        import re as re_module
+        valid_word = re_module.compile(r'^[a-zA-ZÀ-ÿ]{3,}$')
 
-        if not lines:
+        # Agrupa palavras por tamanho de fonte — foca nas maiores
+        words_by_size = {}
+        for i in range(len(data_ocr['text'])):
+            word = data_ocr['text'][i].strip()
+            height_px = data_ocr['height'][i]
+            conf = int(data_ocr['conf'][i])
+
+            # Filtra: confiança > 40, palavra válida, altura > 20px
+            if conf > 40 and height_px > 20 and valid_word.match(word):
+                if height_px not in words_by_size:
+                    words_by_size[height_px] = []
+                words_by_size[height_px].append(word)
+
+        print(f"📝 Palavras por tamanho: {dict(sorted(words_by_size.items(), reverse=True)[:5])}")
+
+        if not words_by_size:
             return None
 
-        name = " ".join(lines[:3])
-        print(f"✅ Nome via OCR: {name}")
+        # Pega as palavras com as maiores fontes
+        sorted_sizes = sorted(words_by_size.keys(), reverse=True)
+        top_words = []
+        for size in sorted_sizes[:3]:  # top 3 tamanhos
+            top_words.extend(words_by_size[size])
+            if len(top_words) >= 4:
+                break
+
+        name = " ".join(top_words[:5])
+        print(f"✅ Nome via OCR (maiores letras): {name}")
         return name
 
     except Exception as e:
