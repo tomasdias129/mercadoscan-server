@@ -2,6 +2,9 @@ from flask import Flask, jsonify
 import requests
 from bs4 import BeautifulSoup
 import re
+import pytesseract
+from PIL import Image
+import io
 
 app = Flask(__name__)
 
@@ -213,11 +216,19 @@ def get_price_mercadona(product_name: str):
 def get_product(barcode: str, supermarket: str):
     supermarket = supermarket.replace("+", " ")
 
+    # 1. Tenta nome normal via OpenFoodFacts
     name = get_product_off(barcode)
+
+    # 2. Se não encontrou, tenta OCR na imagem
     if not name:
-        # Devolve 404 em vez de usar o barcode como nome
+        print(f"⚠️ Nome não encontrado via API, a tentar OCR...")
+        name = get_product_name_via_ocr(barcode)
+
+    # 3. Se ainda não encontrou, devolve 404
+    if not name:
         return jsonify({"error": "Produto não encontrado"}), 404
 
+    # 4. Busca preço
     price = None
     if supermarket == "Pingo Doce":
         price = get_price_pingo_doce(name)
@@ -238,6 +249,54 @@ def get_product(barcode: str, supermarket: str):
         "price": price,
         "supermarket": supermarket
     })
+    
+pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe' 
+def get_product_name_via_ocr(barcode: str):
+    try:
+        # 1. Busca imagem do produto no OpenFoodFacts
+        url = f"https://world.openfoodfacts.org/api/v0/product/{barcode}.json"
+        res = requests.get(url, timeout=5)
+        data = res.json()
+
+        if data.get("status") != 1:
+            return None
+
+        product = data["product"]
+
+        # Tenta obter imagem frontal
+        image_url = (
+            product.get("image_front_url") or
+            product.get("image_url") or
+            product.get("image_front_small_url")
+        )
+
+        if not image_url:
+            print("❌ Nenhuma imagem encontrada no OpenFoodFacts")
+            return None
+
+        print(f"🖼️ Imagem encontrada: {image_url}")
+
+        # 2. Descarrega a imagem
+        img_res = requests.get(image_url, timeout=8)
+        img = Image.open(io.BytesIO(img_res.content))
+
+        # 3. OCR na imagem
+        text = pytesseract.image_to_string(img, lang="por+eng")
+        print(f"📝 Texto OCR extraído:\n{text}")
+
+        # 4. Limpa o texto — pega as primeiras linhas não vazias
+        lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
+        if not lines:
+            return None
+
+        # Usa as primeiras 3 linhas como nome do produto
+        name = " ".join(lines[:3])
+        print(f"✅ Nome via OCR: {name}")
+        return name
+
+    except Exception as e:
+        print(f"Erro OCR: {e}")
+    return None
 
 if __name__ == "__main__":
     import os
