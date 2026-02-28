@@ -5,12 +5,20 @@ import re
 import pytesseract
 from PIL import Image
 import io
-import os
-import shutil
+import subprocess
+import sys
 
 app = Flask(__name__)
 
-pytesseract.pytesseract.tesseract_cmd = 'tesseract'
+# Instala tesseract automaticamente se não estiver instalado
+try:
+    subprocess.run(['tesseract', '--version'], capture_output=True, check=True)
+    print("✅ Tesseract já instalado")
+except:
+    print("⚠️ A instalar Tesseract...")
+    subprocess.run(['apt-get', 'update'], capture_output=True)
+    subprocess.run(['apt-get', 'install', '-y', 'tesseract-ocr', 'tesseract-ocr-por', 'tesseract-ocr-eng'], capture_output=True)
+    print("✅ Tesseract instalado")
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
