@@ -211,13 +211,12 @@ def get_price_mercadona(product_name: str):
 
 @app.route("/product/<barcode>/<supermarket>")
 def get_product(barcode: str, supermarket: str):
-    # Corrige o + para espaço
     supermarket = supermarket.replace("+", " ")
 
     name = get_product_off(barcode)
     if not name:
-        # Em vez de 404, devolve o barcode como nome
-        name = barcode
+        # Devolve 404 em vez de usar o barcode como nome
+        return jsonify({"error": "Produto não encontrado"}), 404
 
     price = None
     if supermarket == "Pingo Doce":
