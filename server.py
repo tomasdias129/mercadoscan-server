@@ -326,6 +326,14 @@ def get_product_name_via_ocr(barcode: str):
     except Exception as e:
         print(f"Erro OCR: {e}")
     return None
+    
+@app.route("/test-tesseract")
+def test_tesseract():
+    try:
+        version = pytesseract.get_tesseract_version()
+        return jsonify({"tesseract": str(version), "path": pytesseract.pytesseract.tesseract_cmd})
+    except Exception as e:
+        return jsonify({"error": str(e)})
 
 if __name__ == "__main__":
     import os
