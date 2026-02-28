@@ -5,8 +5,15 @@ import re
 import pytesseract
 from PIL import Image
 import io
+import os
 
 app = Flask(__name__)
+
+# Deteta automaticamente o ambiente
+if os.name == 'nt':  # Windows
+    pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
+else:  # Linux (Railway)
+    pytesseract.pytesseract.tesseract_cmd = 'tesseract'
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/120.0.0.0 Safari/537.36"
@@ -304,6 +311,7 @@ def get_product_name_via_ocr(barcode: str):
         # 3. OCR na imagem
         text = pytesseract.image_to_string(img, lang="por+eng")
         print(f"📝 Texto OCR extraído:\n{text}")
+        print(f"📝 Linhas encontradas: {[l.strip() for l in text.split(chr(10)) if len(l.strip()) > 3]}")
 
         # 4. Limpa o texto — pega as primeiras linhas não vazias
         lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
