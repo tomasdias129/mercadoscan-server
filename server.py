@@ -60,7 +60,7 @@ def get_product_name_via_ocr(barcode: str):
         )
 
         if not image_url:
-            print("❌ Nenhuma imagem encontrada no OpenFoodFacts")
+            print("❌ Nenhuma imagem encontrada")
             return None
 
         print(f"🖼️ Imagem encontrada: {image_url}")
@@ -68,7 +68,28 @@ def get_product_name_via_ocr(barcode: str):
         img_res = requests.get(image_url, timeout=8)
         img = Image.open(io.BytesIO(img_res.content))
 
-        text = pytesseract.image_to_string(img, lang="por+eng")
+        # Pré-processamento para melhorar OCR
+        # 1. Converte para RGB se necessário
+        if img.mode != 'RGB':
+            img = img.convert('RGB')
+
+        # 2. Aumenta o tamanho da imagem
+        width, height = img.size
+        img = img.resize((width * 3, height * 3), Image.LANCZOS)
+        print(f"📐 Tamanho da imagem: {img.size}")
+
+        # 3. Converte para escala de cinzas
+        img = img.convert('L')
+
+        # 4. Aumenta contraste
+        from PIL import ImageEnhance, ImageFilter
+        img = ImageEnhance.Contrast(img).enhance(2.0)
+        img = ImageEnhance.Sharpness(img).enhance(2.0)
+        img = img.filter(ImageFilter.SHARPEN)
+
+        # 5. OCR com configurações melhoradas
+        config = '--oem 3 --psm 6'
+        text = pytesseract.image_to_string(img, lang="por+eng", config=config)
         print(f"📝 Texto OCR extraído:\n{text}")
 
         lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 3]
