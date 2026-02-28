@@ -219,16 +219,14 @@ def get_product(barcode: str, supermarket: str):
     # 1. Tenta nome normal via OpenFoodFacts
     name = get_product_off(barcode)
 
-    # 2. Se não encontrou, tenta OCR na imagem
     if not name:
         print(f"⚠️ Nome não encontrado via API, a tentar OCR...")
         name = get_product_name_via_ocr(barcode)
 
-    # 3. Se ainda não encontrou, devolve 404
     if not name:
         return jsonify({"error": "Produto não encontrado"}), 404
 
-    # 4. Busca preço
+    # 2. Busca preço com nome original
     price = None
     if supermarket == "Pingo Doce":
         price = get_price_pingo_doce(name)
@@ -240,6 +238,29 @@ def get_product(barcode: str, supermarket: str):
         price = get_price_intermarche(name)
     elif supermarket == "Mercadona":
         price = get_price_mercadona(name)
+
+    # 3. Se não encontrou preço, tenta OCR e pesquisa novamente
+    if price is None:
+        print(f"⚠️ Preço não encontrado com nome '{name}', a tentar OCR...")
+        ocr_name = get_product_name_via_ocr(barcode)
+
+        if ocr_name and ocr_name != name:
+            print(f"🔄 A tentar com nome OCR: {ocr_name}")
+            if supermarket == "Pingo Doce":
+                price = get_price_pingo_doce(ocr_name)
+            elif supermarket == "Continente":
+                price = get_price_continente(ocr_name)
+            elif supermarket == "Auchan":
+                price = get_price_auchan(ocr_name)
+            elif supermarket == "Intermarché":
+                price = get_price_intermarche(ocr_name)
+            elif supermarket == "Mercadona":
+                price = get_price_mercadona(ocr_name)
+
+            # Atualiza o nome para o OCR se encontrou preço
+            if price is not None:
+                print(f"✅ Preço encontrado com nome OCR: {price}€")
+                name = ocr_name
 
     print(f"Resultado final: {name} | {supermarket} | {price}€")
 
