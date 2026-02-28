@@ -7,6 +7,7 @@ from PIL import Image
 import io
 import subprocess
 import sys
+import os
 
 app = Flask(__name__)
 
